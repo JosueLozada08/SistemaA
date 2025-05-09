@@ -1,0 +1,11 @@
+{
+    "realm": "proyecto-seguro",
+    "auth-server-url": "http://localhost:8080/",
+    "ssl-required": "external",
+    "resource": "sistema-a",
+    "credentials": {
+      "secret": "qetdzbfhmpZGLMCNtm5pZx380FceYG7D"
+    },
+    "confidential-port": 0
+  }
+  
