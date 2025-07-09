@@ -3,11 +3,11 @@ const session = require("express-session");
 const Keycloak = require("keycloak-connect");
 const axios = require("axios");
 const fernet = require("fernet");
+const crypto = require("crypto");
 
 const app = express();
 const memoryStore = new session.MemoryStore();
 
-// Configuración de sesión
 app.use(session({
   secret: 'clave-secreta',
   resave: false,
@@ -15,15 +15,12 @@ app.use(session({
   store: memoryStore
 }));
 
-// Inicializar Keycloak
 const keycloak = new Keycloak({ store: memoryStore });
 app.use(keycloak.middleware());
 
-// Clave Fernet (debe ser la misma que en Sistema B)
 const SECRET = 'QNIYU4mv2I_BrOF3Cmz56dHgxWmqv6YX9FodSWXOs-k=';
 const key = new fernet.Secret(SECRET);
 
-// Ruta pública estilizada con opción de cerrar sesión
 app.get("/", (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -59,7 +56,6 @@ app.get("/", (req, res) => {
   `);
 });
 
-// Ruta protegida
 app.get("/protegido", keycloak.protect(), (req, res) => {
   const username = req.kauth.grant.access_token.content.preferred_username;
   res.send(`
@@ -70,22 +66,21 @@ app.get("/protegido", keycloak.protect(), (req, res) => {
   `);
 });
 
-// Logout
 app.get("/logout", (req, res) => {
   res.redirect(keycloak.logoutUrl());
 });
 
-// Invocación cifrada a Sistema B
 app.get("/invocar", keycloak.protect(), async (req, res) => {
   try {
-    // Obtener token JWT
     const jwt = req.kauth.grant.access_token.token;
+    const password = "secreta123";
+    const passwordHash = crypto.createHash("sha256").update(password).digest("hex");
 
-    // Preparar mensaje
     const payload = {
       usuario: req.kauth.grant.access_token.content.preferred_username,
       mensaje: "Invocación segura desde Sistema A",
-      fecha: new Date().toISOString()
+      fecha: new Date().toISOString(),
+      password_hash: passwordHash
     };
 
     const token = new fernet.Token({
@@ -95,7 +90,8 @@ app.get("/invocar", keycloak.protect(), async (req, res) => {
 
     const mensajeCifrado = token.encode(JSON.stringify(payload));
 
-    // Enviar al API de Sistema B
+    console.log("🔐 Token generado:", mensajeCifrado);
+
     const respuesta = await axios.post("http://localhost:4000/api/secure-data", {
       token: mensajeCifrado
     }, {
@@ -104,11 +100,85 @@ app.get("/invocar", keycloak.protect(), async (req, res) => {
       }
     });
 
-    // Mostrar respuesta
+    // Vista 
     res.send(`
-      <h3>Respuesta de Sistema B:</h3>
-      <pre>${JSON.stringify(respuesta.data, null, 2)}</pre>
-      <a href="/">Volver al inicio</a>
+      <html>
+      <head>
+        <title>Respuesta de Sistema B</title>
+        <style>
+          body {
+            font-family: 'Segoe UI', sans-serif;
+            background-color: #f4f4f4;
+            padding: 40px;
+          }
+          h2 {
+            color: #333;
+          }
+          .card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+          }
+          textarea {
+            width: 100%;
+            font-family: monospace;
+            font-size: 14px;
+            padding: 10px;
+            border-radius: 5px;
+            resize: none;
+          }
+          pre {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            overflow-x: auto;
+          }
+          .btn-copy {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            margin-top: 8px;
+            border-radius: 5px;
+            cursor: pointer;
+          }
+          .btn-copy:hover {
+            background-color: #0056b3;
+          }
+          a {
+            text-decoration: none;
+            color: #007bff;
+            display: inline-block;
+            margin-top: 20px;
+          }
+        </style>
+        <script>
+          function copiarTexto() {
+            const textarea = document.getElementById("token");
+            textarea.select();
+            document.execCommand("copy");
+            alert("Token copiado al portapapeles");
+          }
+        </script>
+      </head>
+      <body>
+        <div class="card">
+          <h2>🔐 Token generado (para Swagger de Sistema B):</h2>
+          <textarea id="token" rows="6" readonly>${mensajeCifrado}</textarea>
+          <button class="btn-copy" onclick="copiarTexto()">Copiar token</button>
+        </div>
+
+        <div class="card">
+          <h2>📡 Respuesta de Sistema B:</h2>
+          <pre>${JSON.stringify(respuesta.data, null, 2)}</pre>
+        </div>
+
+        <a href="/">← Volver al inicio</a>
+      </body>
+      </html>
     `);
 
   } catch (error) {
@@ -117,5 +187,5 @@ app.get("/invocar", keycloak.protect(), async (req, res) => {
 });
 
 app.listen(3000, () => {
-  console.log(" Sistema A en http://localhost:3000");
+  console.log("✅ Sistema A en http://localhost:3000");
 });
